@@ -150,3 +150,39 @@ func TestConfigBuildExec(t *testing.T) {
 		}
 	}
 }
+
+func TestConfigBuildEmpty(t *testing.T) {
+	reg, err := (&Config{}).Build(context.Background())
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if len(reg.Names()) != 0 {
+		t.Errorf("names = %v, want empty registry", reg.Names())
+	}
+}
+
+func TestNestedObjectSkippedByCLIOnly(t *testing.T) {
+	inv := func(_ context.Context, _ map[string]any) (any, error) { return nil, nil }
+	e, err := NewTool("a.b", "", "", testSchema(), inv)
+	if err != nil {
+		t.Fatalf("NewTool: %v", err)
+	}
+	found := false
+	for _, f := range e.Root.Fields {
+		if f.JSONName == "cfg" {
+			found = true
+			if !f.CLI.Skip {
+				t.Error("nested object property must be CLI-skipped")
+			}
+			if f.Skip {
+				t.Error("nested object property must stay visible to MCP/HTTP (skip=false)")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("cfg property missing from field tree")
+	}
+	if e.InputSchema.Properties["cfg"] == nil {
+		t.Error("InputSchema must keep the nested object for the MCP frontend")
+	}
+}

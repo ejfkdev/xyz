@@ -26,6 +26,8 @@ func TestRenderArgs(t *testing.T) {
 		{"mixed absent drops", []string{"--type={qtype}"}, map[string]any{}, nil},
 		{"slice joins", []string{"--tags={tags}"}, map[string]any{"tags": []string{"a", "b"}}, []string{"--tags=a,b"}},
 		{"bool inline renders", []string{"--quiet={q}"}, map[string]any{"q": false}, []string{"--quiet=false"}},
+		{"multi placeholder", []string{"{a}-{b}"}, map[string]any{"a": int64(1), "b": "x"}, []string{"1-x"}},
+		{"repeat placeholder", []string{"{x}:{x}"}, map[string]any{"x": "v"}, []string{"v:v"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -90,6 +92,37 @@ func TestExecInvokerTimeout(t *testing.T) {
 	}
 	if time.Since(start) > 3*time.Second {
 		t.Errorf("timeout took %v, want ~100ms", time.Since(start))
+	}
+}
+
+func TestExecInvokerEnvTemplate(t *testing.T) {
+	inv := ExecInvoker(ExecConfig{
+		Program: "/bin/sh",
+		Args:    []string{"-c", "printf '%s' \"$XYZ_TOKEN\""},
+		Env:     map[string]string{"XYZ_TOKEN": "{token}"},
+	})
+	out, err := inv(context.Background(), map[string]any{"token": "s3cret"})
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	if out != "s3cret" {
+		t.Errorf("out = %q, want env-interpolated token", out)
+	}
+}
+
+func TestExecInvokerMaxOutput(t *testing.T) {
+	// dd 生成确定性的 250 个 'x'（无空白），截断不改变字节内容。
+	inv := ExecInvoker(ExecConfig{
+		Program:   "/bin/sh",
+		Args:      []string{"-c", "dd if=/dev/zero bs=250 count=1 | tr '\\0' x"},
+		MaxOutput: 100,
+	})
+	out, err := inv(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	if s := out.(string); len(s) != 100 {
+		t.Errorf("output len = %d, want capped at 100", len(s))
 	}
 }
 

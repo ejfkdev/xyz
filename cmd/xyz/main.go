@@ -14,8 +14,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/ejfkdev/xyz/bridge"
 	xyzsdk "github.com/ejfkdev/xyz-go"
+	"github.com/ejfkdev/xyz/bridge"
 )
 
 func main() {

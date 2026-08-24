@@ -181,3 +181,48 @@ func TestSchemaImplicitObject(t *testing.T) {
 		t.Errorf("n = %+v", n)
 	}
 }
+
+func TestSchemaDefaultCoercion(t *testing.T) {
+	// default 的 JSON 形态随类型归一：数字是 float64、字符串直通。
+	n := mustParse(t, map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"port":  map[string]any{"type": "integer", "default": float64(8080)},
+			"ratio": map[string]any{"type": "number", "default": 0.5},
+			"flag":  map[string]any{"type": "boolean", "default": false},
+		},
+	})
+	got, err := n.normalize(map[string]any{})
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	if got["port"] != int64(8080) {
+		t.Errorf("port = %#v, want int64(8080)", got["port"])
+	}
+	if got["ratio"] != 0.5 {
+		t.Errorf("ratio = %#v, want 0.5", got["ratio"])
+	}
+	if got["flag"] != false {
+		t.Errorf("flag = %#v, want false", got["flag"])
+	}
+}
+
+func TestSchemaArrayItemsInteger(t *testing.T) {
+	n := mustParse(t, map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"ports": map[string]any{"type": "array", "items": map[string]any{"type": "integer"}},
+		},
+	})
+	got, err := n.normalize(map[string]any{"ports": "80, 443"})
+	if err != nil {
+		t.Fatalf("normalize: %v", err)
+	}
+	l, ok := got["ports"].([]any)
+	if !ok || len(l) != 2 || l[0] != int64(80) || l[1] != int64(443) {
+		t.Errorf("ports = %#v, want [80 443] as integers", got["ports"])
+	}
+	if _, err := n.normalize(map[string]any{"ports": "80,http"}); err == nil {
+		t.Error("non-integer array element accepted")
+	}
+}

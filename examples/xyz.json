@@ -3,10 +3,7 @@
     {
       "name": "sys.echo",
       "summary": "回声：原样返回文本",
-      "exec": {
-        "program": "/bin/echo",
-        "args": ["{msg}"]
-      },
+      "exec": { "program": "/bin/echo", "args": ["{msg}"] },
       "input": {
         "type": "object",
         "properties": {
@@ -17,11 +14,7 @@
     {
       "name": "sys.date",
       "summary": "当前日期时间",
-      "exec": {
-        "program": "/bin/date",
-        "args": ["+%Y-%m-%d %H:%M:%S"],
-        "timeout": "10s"
-      }
+      "exec": { "program": "/bin/date", "args": ["+%Y-%m-%d %H:%M:%S"], "timeout": "10s" }
     },
     {
       "name": "sys.sha256",
@@ -33,32 +26,134 @@
       },
       "input": {
         "type": "object",
-        "properties": {
-          "text": { "type": "string", "description": "原文" }
-        },
+        "properties": { "text": { "type": "string", "description": "原文" } },
         "required": ["text"]
       }
     },
     {
+      "name": "sys.uname",
+      "summary": "内核与系统信息（uname -a）",
+      "exec": { "program": "/usr/bin/uname", "args": ["-a"], "timeout": "10s" }
+    },
+    {
+      "name": "sys.uptime",
+      "summary": "系统运行时长与负载",
+      "exec": { "program": "/usr/bin/uptime", "timeout": "10s" }
+    },
+    {
+      "name": "sys.whoami",
+      "summary": "当前用户名",
+      "exec": { "program": "/usr/bin/whoami", "timeout": "10s" }
+    },
+    {
+      "name": "sys.hostname",
+      "summary": "主机名",
+      "exec": { "program": "/bin/hostname", "timeout": "10s" }
+    },
+    {
+      "name": "fs.ls",
+      "summary": "列出目录内容（含隐藏文件）",
+      "exec": { "program": "/bin/ls", "args": ["-la", "{path}"], "timeout": "10s" },
+      "input": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "目录路径", "default": "." }
+        }
+      }
+    },
+    {
+      "name": "fs.du",
+      "summary": "目录占用空间",
+      "exec": { "program": "/usr/bin/du", "args": ["-sh", "{path}"], "timeout": "30s" },
+      "input": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "目录路径", "default": "." }
+        }
+      }
+    },
+    {
+      "name": "fs.md5",
+      "summary": "文件 MD5（macOS /sbin/md5）",
+      "exec": { "program": "/sbin/md5", "args": ["-q", "{file}"], "timeout": "30s" },
+      "input": {
+        "type": "object",
+        "properties": { "file": { "type": "string", "description": "文件路径" } },
+        "required": ["file"]
+      }
+    },
+    {
+      "name": "fs.head",
+      "summary": "读取文件开头 N 行",
+      "exec": { "program": "/usr/bin/head", "args": ["-n", "{lines}", "{file}"], "timeout": "10s" },
+      "input": {
+        "type": "object",
+        "properties": {
+          "file": { "type": "string", "description": "文件路径" },
+          "lines": { "type": "integer", "description": "行数", "default": 10 }
+        },
+        "required": ["file"]
+      }
+    },
+    {
+      "name": "fs.wc",
+      "summary": "统计文件行数",
+      "exec": { "program": "/usr/bin/wc", "args": ["-l", "{file}"], "timeout": "10s" },
+      "input": {
+        "type": "object",
+        "properties": { "file": { "type": "string", "description": "文件路径" } },
+        "required": ["file"]
+      }
+    },
+    {
+      "name": "net.ping",
+      "summary": "ICMP 连通性测试",
+      "exec": { "program": "/sbin/ping", "args": ["-c", "{count}", "{host}"], "timeout": "30s" },
+      "input": {
+        "type": "object",
+        "properties": {
+          "host": { "type": "string", "description": "目标主机" },
+          "count": { "type": "integer", "description": "发包次数", "default": 4 }
+        },
+        "required": ["host"]
+      }
+    },
+    {
+      "name": "net.curl",
+      "summary": "拉取 URL 内容",
+      "exec": { "program": "/usr/bin/curl", "args": ["-s", "{url}"], "timeout": "15s" },
+      "input": {
+        "type": "object",
+        "properties": { "url": { "type": "string", "description": "目标 URL" } },
+        "required": ["url"]
+      }
+    },
+    {
+      "name": "net.public-ip",
+      "summary": "查询公网出口 IP（外网服务）",
+      "exec": { "program": "/usr/bin/curl", "args": ["-s", "https://ipinfo.io/ip"], "timeout": "15s" }
+    },
+    {
       "name": "dns.lookup",
       "summary": "DNS 记录查询",
-      "exec": {
-        "program": "dig",
-        "args": ["+short", "{qtype}", "{host}"],
-        "timeout": "15s"
-      },
+      "exec": { "program": "/usr/bin/dig", "args": ["+short", "{qtype}", "{host}"], "timeout": "15s" },
       "input": {
         "type": "object",
         "properties": {
           "host": { "type": "string", "description": "域名" },
-          "qtype": {
-            "type": "string",
-            "description": "记录类型",
-            "enum": ["A", "AAAA", "MX", "TXT"],
-            "default": "A"
-          }
+          "qtype": { "type": "string", "description": "记录类型", "enum": ["A", "AAAA", "MX", "TXT"], "default": "A" }
         },
         "required": ["host"]
+      }
+    },
+    {
+      "name": "dns.whois",
+      "summary": "域名 WHOIS 信息（外网服务）",
+      "exec": { "program": "/usr/bin/whois", "args": ["{domain}"], "timeout": "20s" },
+      "input": {
+        "type": "object",
+        "properties": { "domain": { "type": "string", "description": "域名" } },
+        "required": ["domain"]
       }
     }
   ]
