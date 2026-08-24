@@ -102,7 +102,7 @@ for _, rt := range tools {
 配置的 `tools` 列表本身就是把多条命令组合进同一注册表（每个前端背后同一台服务）。两种形态顺势而来：
 
 - **分文件、加载时合并**：`XYZ_CONFIG=ls.json,whoami.json,du.json xyz serve`（或 `bridge.LoadMany`）把多个源合成一台服务；跨源同名工具在启动时报错。
-- **平铺名与可配前缀**：不带点分的工具名落成顶层命令——CLI 是 `xyz ls`，HTTP 是 `POST /tools/ls`，MCP 工具名是 `ls`。配置级 `http_prefix` 换路由前缀：`"http_prefix": "/api"` 得到 `POST /api/ls`。
+- **平铺名与可配前缀**：不带点分的工具名落成顶层命令——CLI 是 `xyz ls`，HTTP 是 `POST /tools/ls`，MCP 工具名是 `ls`。配置级 `http_prefix` 换路由前缀：`"http_prefix": "/api"` 得到 `POST /api/ls`；`mcp_prefix` 用同样方式给 MCP 工具名加前缀，**两者各自独立**——设一个、另一个或都设（`"mcp_prefix": "sys."` 让 MCP 侧对外叫 `sys.ls`，HTTP 该在哪还在哪）；单个 exec 工具用 `mcp_name` 直接钉死 MCP 名，优先级高于配置级前缀。
 
 `examples/multisvc/` 用真实系统命令接好了这两种形态。
 

@@ -176,3 +176,85 @@ func TestMultisvcExamples(t *testing.T) {
 		t.Fatalf("POST /api/whoami = %d, body %q", rec.Code, rec.Body.String())
 	}
 }
+
+// TestChannelPrefixesIndependent 覆盖双前缀需求：http 与 mcp 各自的前缀
+// 独立设置、互不影响，CLI 命名始终是点分层级的那份。
+func TestChannelPrefixesIndependent(t *testing.T) {
+	ctx := context.Background()
+	schema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"path": map[string]any{"type": "string", "default": "."},
+		},
+	}
+	cfg := &Config{
+		HTTPPrefix: "/api",
+		MCPPrefix:  "systools.",
+		Tools: []ToolConfig{{
+			Name:  "ls",
+			Exec:  &ExecConfig{Program: "/usr/bin/true"},
+			Input: schema,
+		}},
+	}
+	reg, err := cfg.Build(ctx)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	e, ok := reg.Get("ls")
+	if !ok {
+		t.Fatalf("names = %v", reg.Names())
+	}
+	if e.HTTP.Path != "/api/ls" {
+		t.Errorf("HTTP.Path = %q, want /api/ls", e.HTTP.Path)
+	}
+	if e.MCP.Name != "systools.ls" {
+		t.Errorf("MCP.Name = %q, want systools.ls", e.MCP.Name)
+	}
+	if e.Name != "ls" {
+		t.Errorf("entry name = %q, want ls (CLI untouched)", e.Name)
+	}
+	// CLI 依然顶层 dispatch：ls，不带任何前缀。
+	app, err := xyzcli.New(reg)
+	if err != nil {
+		t.Fatalf("cli.New: %v", err)
+	}
+	if code := app.Run([]string{"ls", "--path", "/tmp"}); code != 0 {
+		t.Fatalf("cli run = %d, want 0", code)
+	}
+
+	// 逐工具 MCPName 胜过配置级 MCPPrefix。
+	cfg2 := &Config{
+		MCPPrefix: "generic.",
+		Tools: []ToolConfig{{
+			Name:    "x",
+			Exec:    &ExecConfig{Program: "/usr/bin/true"},
+			Input:   schema,
+			MCPName: "pinned.x",
+		}},
+	}
+	reg2, err := cfg2.Build(ctx)
+	if err != nil {
+		t.Fatalf("Build2: %v", err)
+	}
+	if got := reg2.All()[0].MCP.Name; got != "pinned.x" {
+		t.Errorf("pinned MCP name = %q, want pinned.x", got)
+	}
+
+	// 只设 MCP 前缀时 HTTP 保持默认 /tools。
+	cfg3 := &Config{
+		MCPPrefix: "m.",
+		Tools: []ToolConfig{{
+			Name:  "x",
+			Exec:  &ExecConfig{Program: "/usr/bin/true"},
+			Input: schema,
+		}},
+	}
+	reg3, err := cfg3.Build(ctx)
+	if err != nil {
+		t.Fatalf("Build3: %v", err)
+	}
+	e3 := reg3.All()[0]
+	if e3.MCP.Name != "m.x" || e3.HTTP.Path != "/tools/x" {
+		t.Errorf("mcp-only prefix: MCP=%q HTTP=%q, want m.x / /tools/x", e3.MCP.Name, e3.HTTP.Path)
+	}
+}

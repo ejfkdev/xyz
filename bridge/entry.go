@@ -21,6 +21,10 @@ type ToolOpts struct {
 	// trailing slashes are normalized away. The full route becomes
 	// "<method> /<prefix>/<dotted-path>".
 	HTTPPrefix string
+	// MCPName overrides the MCP tool name offered to clients; empty keeps
+	// the entry name. HTTP and CLI naming is never affected, so each
+	// channel can carry its own prefix independently.
+	MCPName string
 	// CLISkip removes the whole command from the CLI frontend.
 	CLISkip bool
 }
@@ -62,6 +66,7 @@ func NewToolWith(name, summary, description string, input any, inv Invoker, opts
 		InputSchema: toSpecSchema(node),
 		Root:        toFieldMeta(name, node),
 		CLI:         spec.CliHints{Skip: opts.CLISkip},
+		MCP:         spec.MCPHints{Name: opts.MCPName},
 		HTTP: spec.HTTPHints{
 			Method: "POST",
 			Path:   "/" + prefix + "/" + strings.ReplaceAll(name, ".", "/"),
@@ -180,8 +185,12 @@ func nodeSchema(n *schemaNode) *spec.Schema {
 type Config struct {
 	// HTTPPrefix sets the route prefix for every tool of this config
 	// (default "/tools"); "/api" turns them into /api/<dotted-path>.
-	HTTPPrefix string       `json:"http_prefix,omitempty"`
-	Tools      []ToolConfig `json:"tools"`
+	HTTPPrefix string `json:"http_prefix,omitempty"`
+	// MCPPrefix sets the MCP tool-name prefix for every tool of this
+	// config: tools are offered as <mcp_prefix><name>. Independent from
+	// HTTPPrefix — set one, the other, or both, per channel's needs.
+	MCPPrefix string       `json:"mcp_prefix,omitempty"`
+	Tools     []ToolConfig `json:"tools"`
 }
 
 // ToolConfig declares one dynamic tool.
@@ -192,6 +201,10 @@ type ToolConfig struct {
 	Input       map[string]any `json:"input,omitempty"` // JSON Schema subset for the arguments
 	Exec        *ExecConfig    `json:"exec,omitempty"`  // local command adapter
 	MCP         *MCPConfig     `json:"mcp,omitempty"`   // stdio MCP server proxy
+	// MCPName pins this exec tool's MCP tool name outright (beats
+	// Config.MCPPrefix). Proxied MCP tools use Config.MCPPrefix instead —
+	// one proxy yields many tools, one pinned name cannot cover them.
+	MCPName string `json:"mcp_name,omitempty"`
 }
 
 // Build resolves every declared tool into entries registered in a fresh
@@ -207,11 +220,16 @@ func (c *Config) Build(ctx context.Context) (*registry.Registry, error) {
 		if err := tc.validate(); err != nil {
 			return nil, err
 		}
-		opts := ToolOpts{HTTPPrefix: c.HTTPPrefix}
+		base := ToolOpts{HTTPPrefix: c.HTTPPrefix}
 		switch {
 		case tc.Exec != nil:
 			if err := tc.Exec.validate(tc.Input); err != nil {
 				return nil, fmt.Errorf("bridge: tool %q: %w", tc.Name, err)
+			}
+			opts := base
+			opts.MCPName = tc.MCPName
+			if opts.MCPName == "" && c.MCPPrefix != "" {
+				opts.MCPName = c.MCPPrefix + tc.Name
 			}
 			e, err := NewToolWith(tc.Name, tc.Summary, tc.Description, tc.Input, ExecInvoker(*tc.Exec), opts)
 			if err != nil {
@@ -231,6 +249,10 @@ func (c *Config) Build(ctx context.Context) (*registry.Registry, error) {
 			}
 			for _, display := range sortedKeys(proxy.tools) {
 				rt := proxy.tools[display]
+				opts := base
+				if c.MCPPrefix != "" {
+					opts.MCPName = c.MCPPrefix + display
+				}
 				e, err := NewToolWith(display, firstLine(rt.Description), rt.Description, rt.Input, proxy.InvokeTool(display), opts)
 				if err != nil {
 					return nil, fmt.Errorf("bridge: tool %q: proxied %s: %w", tc.Name, display, err)

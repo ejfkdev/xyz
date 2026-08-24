@@ -103,7 +103,7 @@ for _, rt := range tools {
 A config's `tools` list already composes multiple commands into the one registry behind every frontend. Two shapes follow from that:
 
 - **Split files, merged at load**: `XYZ_CONFIG=ls.json,whoami.json,du.json xyz serve` (or `bridge.LoadMany`) merges the sources into one service; duplicate tool names across sources fail at startup.
-- **Flat, prefixable routes**: a dotted-free tool name lands as a top-level command — `xyz ls` on the CLI, `POST /tools/ls` over HTTP, `ls` over MCP. `http_prefix` on the config swaps the route prefix: `"http_prefix": "/api"` yields `POST /api/ls`.
+- **Flat, prefixable routes**: a dotted-free tool name lands as a top-level command — `xyz ls` on the CLI, `POST /tools/ls` over HTTP, `ls` over MCP. `http_prefix` on the config swaps the route prefix: `"http_prefix": "/api"` yields `POST /api/ls`. `mcp_prefix` prefixes MCP tool names the same way, **independently**: set one, the other, or both (`"mcp_prefix": "sys."` offers `sys.ls` over MCP while HTTP stays wherever `http_prefix` put it); a per-tool `mcp_name` pins one exec tool's MCP name outright and beats the config-level prefix.
 
 `examples/multisvc/` wires both shapes to real system utilities.
 

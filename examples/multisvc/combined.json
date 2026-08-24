@@ -1,5 +1,6 @@
 {
   "http_prefix": "/api",
+  "mcp_prefix": "sys.",
   "tools": [
     {
       "name": "ls",

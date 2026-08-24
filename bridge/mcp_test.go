@@ -85,14 +85,17 @@ func TestMCPProxyRoundTrip(t *testing.T) {
 		t.Error("remote validation error swallowed")
 	}
 
-	// Build 级联：把代理直接注册成三通道命令。
-	cfg := &Config{Tools: []ToolConfig{{
-		Name: "repomix",
-		MCP: &MCPConfig{
-			Command: exe,
-			Args:    []string{"-test.run=TestMCPProxyHelper", "-test.v=false"},
-		},
-	}}}
+	// Build 级联：把代理直接注册成三通道命令；MCPPrefix 只改 MCP 工具名。
+	cfg := &Config{
+		MCPPrefix: "pfx.",
+		Tools: []ToolConfig{{
+			Name: "repomix",
+			MCP: &MCPConfig{
+				Command: exe,
+				Args:    []string{"-test.run=TestMCPProxyHelper", "-test.v=false"},
+			},
+		}},
+	}
 	reg, err := cfg.Build(ctx)
 	if err != nil {
 		t.Fatalf("Build: %v", err)
@@ -100,6 +103,12 @@ func TestMCPProxyRoundTrip(t *testing.T) {
 	e, ok := reg.Get("repomix.echo.msg")
 	if !ok {
 		t.Fatalf("repomix.echo.msg not registered; names: %v", reg.Names())
+	}
+	if e.MCP.Name != "pfx.repomix.echo.msg" {
+		t.Errorf("proxied MCP name = %q, want pfx.repomix.echo.msg", e.MCP.Name)
+	}
+	if e.HTTP.Path != "/tools/repomix/echo/msg" {
+		t.Errorf("proxied HTTP path = %q, want /tools/repomix/echo/msg", e.HTTP.Path)
 	}
 	got, err := e.Invoke(ctx, map[string]any{"msg": "full"})
 	if err != nil || got != "pong:full" {
