@@ -77,7 +77,7 @@ func StartMCPProxy(ctx context.Context, cfg MCPConfig, namespace string) (*MCPPr
 		p.Close()
 		return nil, err
 	}
-	client := sdkmcp.NewClient(&sdkmcp.Implementation{Name: "xyz-bridge", Version: Version}, nil)
+	client := sdkmcp.NewClient(&sdkmcp.Implementation{Name: "xyz", Version: Version}, nil)
 	session, err := client.Connect(ctx, &sdkmcp.IOTransport{Reader: out, Writer: in}, nil)
 	if err != nil {
 		return fail(fmt.Errorf("bridge: mcp handshake with %q: %w", cfg.Command, err))

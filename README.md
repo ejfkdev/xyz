@@ -1,4 +1,4 @@
-# xyz-bridge — Foreign tools, three interfaces
+# xyz — Foreign tools, three interfaces
 
 [![Go Version](https://img.shields.io/badge/Go-1.25+-00ADD8?style=flat&logo=go)](https://go.dev/dl/)
 [![MCP Protocol](https://img.shields.io/badge/MCP-2024%E2%80%932026--07--28-0764e0?style=flat)](https://modelcontextprotocol.io/specification/2026-07-28)

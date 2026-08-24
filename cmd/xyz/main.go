@@ -14,7 +14,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/ejfkdev/xyz-bridge/bridge"
+	"github.com/ejfkdev/xyz/bridge"
 	xyzsdk "github.com/ejfkdev/xyz-go"
 )
 

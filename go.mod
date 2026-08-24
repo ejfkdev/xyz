@@ -1,4 +1,4 @@
-module github.com/ejfkdev/xyz-bridge
+module github.com/ejfkdev/xyz
 
 go 1.25.0
 
