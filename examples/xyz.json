@@ -1,0 +1,65 @@
+{
+  "tools": [
+    {
+      "name": "sys.echo",
+      "summary": "回声：原样返回文本",
+      "exec": {
+        "program": "/bin/echo",
+        "args": ["{msg}"]
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "msg": { "type": "string", "description": "要回显的文本", "default": "hello" }
+        }
+      }
+    },
+    {
+      "name": "sys.date",
+      "summary": "当前日期时间",
+      "exec": {
+        "program": "/bin/date",
+        "args": ["+%Y-%m-%d %H:%M:%S"],
+        "timeout": "10s"
+      }
+    },
+    {
+      "name": "sys.sha256",
+      "summary": "计算字符串的 SHA-256",
+      "exec": {
+        "program": "/bin/sh",
+        "args": ["-c", "printf '%s' \"{text}\" | shasum -a 256 | cut -d' ' -f1"],
+        "timeout": "10s"
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string", "description": "原文" }
+        },
+        "required": ["text"]
+      }
+    },
+    {
+      "name": "dns.lookup",
+      "summary": "DNS 记录查询",
+      "exec": {
+        "program": "dig",
+        "args": ["+short", "{qtype}", "{host}"],
+        "timeout": "15s"
+      },
+      "input": {
+        "type": "object",
+        "properties": {
+          "host": { "type": "string", "description": "域名" },
+          "qtype": {
+            "type": "string",
+            "description": "记录类型",
+            "enum": ["A", "AAAA", "MX", "TXT"],
+            "default": "A"
+          }
+        },
+        "required": ["host"]
+      }
+    }
+  ]
+}

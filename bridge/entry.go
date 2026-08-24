@@ -1,0 +1,239 @@
+package bridge
+
+import (
+	"context"
+	"fmt"
+	"reflect"
+	"strings"
+
+	"github.com/ejfkdev/xyz-go/registry"
+	"github.com/ejfkdev/xyz-go/spec"
+)
+
+// Invoker runs one tool call with schema-normalized arguments and returns
+// the value every frontend renders: plain text for exec tools, a native
+// JSON value for MCP proxies.
+type Invoker func(ctx context.Context, args map[string]any) (any, error)
+
+// NewTool is the dynamic entry factory: a JSON Schema subset (input) plus
+// an Invoker becomes a fully wired spec.Entry — the CLI flags, the HTTP
+// route (POST /tools/<dotted path>) and the MCP tool all derive from it,
+// with no compile-time struct.
+func NewTool(name, summary, description string, input any, inv Invoker) (*spec.Entry, error) {
+	if strings.TrimSpace(name) == "" {
+		return nil, fmt.Errorf("bridge: tool name must not be empty")
+	}
+	if inv == nil {
+		return nil, fmt.Errorf("bridge: tool %q: nil invoker", name)
+	}
+	node, err := parseSchema(input)
+	if err != nil {
+		return nil, fmt.Errorf("bridge: tool %q: %w", name, err)
+	}
+	if node.typ != "object" {
+		return nil, fmt.Errorf("bridge: tool %q: input schema must be an object, got %q", name, node.typ)
+	}
+
+	// name 的点分路径映射为 CLI 子命令层级（xyz dns lookup）、MCP 工具名
+	// 与 HTTP 路径（/tools/dns/lookup）三份同源形态。
+	e := &spec.Entry{
+		Name:        name,
+		Summary:     summary,
+		Description: description,
+		InputSchema: toSpecSchema(node),
+		Root:        toFieldMeta(name, node),
+		HTTP: spec.HTTPHints{
+			Method: "POST",
+			Path:   "/tools/" + strings.ReplaceAll(name, ".", "/"),
+		},
+	}
+	e.Invoke = func(ctx context.Context, args map[string]any) (any, error) {
+		norm, err := node.normalize(args)
+		if err != nil {
+			return nil, err
+		}
+		return inv(ctx, norm)
+	}
+	return e, nil
+}
+
+// toFieldMeta builds the argument tree the CLI and HTTP frontends read.
+// Kinds come straight from the schema types; nested object properties stay
+// visible to MCP and HTTP but are skipped by the CLI frontend, which has no
+// nested-flag syntax yet.
+func toFieldMeta(name string, n *schemaNode) *spec.FieldMeta {
+	root := &spec.FieldMeta{
+		Name:     name,
+		JSONName: name,
+		Type:     reflect.TypeOf(map[string]any(nil)),
+		Kind:     reflect.Struct,
+	}
+	for _, pname := range sortedKeys(n.props) {
+		sub := n.props[pname]
+		f := &spec.FieldMeta{
+			Name:        pname,
+			JSONName:    pname,
+			Description: sub.desc,
+			Required:    n.required[pname],
+			Enum:        sub.enum,
+			Default:     sub.def,
+		}
+		if sub.def == nil {
+			f.Default = nil
+		}
+		setFieldKind(f, sub)
+		root.Fields = append(root.Fields, f)
+	}
+	return root
+}
+
+// setFieldKind maps a schema type onto the reflect metadata the xyz-go
+// frontends use to pick flag kinds (bool/slice/string) and binders.
+func setFieldKind(f *spec.FieldMeta, n *schemaNode) {
+	switch n.typ {
+	case "string":
+		f.Kind, f.Type = reflect.String, reflect.TypeOf("")
+	case "integer":
+		f.Kind, f.Type = reflect.Int64, reflect.TypeOf(int64(0))
+	case "number":
+		f.Kind, f.Type = reflect.Float64, reflect.TypeOf(float64(0))
+	case "boolean":
+		f.Kind, f.Type = reflect.Bool, reflect.TypeOf(false)
+	case "array":
+		f.Kind, f.Type = reflect.Slice, reflect.TypeOf([]string(nil))
+		el := &spec.FieldMeta{}
+		if n.items == nil {
+			el.Kind, el.Type = reflect.String, reflect.TypeOf("")
+		} else {
+			setFieldKind(el, n.items)
+		}
+		f.Elem = el
+		if el.Kind == reflect.Struct || el.Kind == reflect.Slice || el.Kind == reflect.Ptr {
+			f.CLI.Skip = true // CLI 前端不支持嵌套元素的 flag
+		}
+	case "object":
+		f.Kind, f.Type = reflect.Struct, reflect.TypeOf(map[string]any(nil))
+		f.CLI.Skip = true
+	}
+}
+
+// toSpecSchema converts the parsed subset into the spec.Schema form that
+// the MCP inputSchema and the OpenAPI document consume.
+func toSpecSchema(n *schemaNode) *spec.Schema {
+	s := &spec.Schema{
+		Type:        "object",
+		Description: n.desc,
+		Properties:  map[string]*spec.Schema{},
+	}
+	for _, name := range sortedKeys(n.props) {
+		s.Properties[name] = nodeSchema(n.props[name])
+	}
+	if len(n.required) > 0 {
+		s.Required = sortedKeys(n.required)
+	}
+	if len(s.Properties) == 0 {
+		s.Properties = nil
+	}
+	return s
+}
+
+func nodeSchema(n *schemaNode) *spec.Schema {
+	s := &spec.Schema{Type: n.typ, Description: n.desc, Enum: n.enum, Default: n.def}
+	switch {
+	case n.typ == "array" && n.items != nil:
+		s.Items = nodeSchema(n.items)
+	case n.typ == "object":
+		s.Properties = map[string]*spec.Schema{}
+		for _, name := range sortedKeys(n.props) {
+			s.Properties[name] = nodeSchema(n.props[name])
+		}
+		if len(n.required) > 0 {
+			s.Required = sortedKeys(n.required)
+		}
+	}
+	return s
+}
+
+// Config is the xyz.json document: a declarative list of tools, each
+// carried by exactly one adapter.
+type Config struct {
+	Tools []ToolConfig `json:"tools"`
+}
+
+// ToolConfig declares one dynamic tool.
+type ToolConfig struct {
+	Name        string         `json:"name"`
+	Summary     string         `json:"summary,omitempty"`
+	Description string         `json:"description,omitempty"`
+	Input       map[string]any `json:"input,omitempty"` // JSON Schema subset for the arguments
+	Exec        *ExecConfig    `json:"exec,omitempty"`  // local command adapter
+	MCP         *MCPConfig     `json:"mcp,omitempty"`   // stdio MCP server proxy
+}
+
+// Build resolves every declared tool into entries registered in a fresh
+// registry. Exec tools bind immediately; MCP proxies launch their server
+// processes here — once per process — and stay alive until it exits.
+func (c *Config) Build(ctx context.Context) (*registry.Registry, error) {
+	reg := registry.New()
+	if c == nil {
+		return reg, nil
+	}
+	for i := range c.Tools {
+		tc := &c.Tools[i]
+		if err := tc.validate(); err != nil {
+			return nil, err
+		}
+		switch {
+		case tc.Exec != nil:
+			if err := tc.Exec.validate(tc.Input); err != nil {
+				return nil, fmt.Errorf("bridge: tool %q: %w", tc.Name, err)
+			}
+			e, err := NewTool(tc.Name, tc.Summary, tc.Description, tc.Input, ExecInvoker(*tc.Exec))
+			if err != nil {
+				return nil, err
+			}
+			if err := reg.Add(e); err != nil {
+				return nil, fmt.Errorf("bridge: tool %q: %w", tc.Name, err)
+			}
+		case tc.MCP != nil:
+			namespace := tc.MCP.Prefix
+			if namespace == "" {
+				namespace = tc.Name + "."
+			}
+			proxy, err := StartMCPProxy(ctx, *tc.MCP, namespace)
+			if err != nil {
+				return nil, fmt.Errorf("bridge: tool %q: %w", tc.Name, err)
+			}
+			for _, display := range sortedKeys(proxy.tools) {
+				rt := proxy.tools[display]
+				e, err := NewTool(display, firstLine(rt.Description), rt.Description, rt.Input, proxy.InvokeTool(display))
+				if err != nil {
+					return nil, fmt.Errorf("bridge: tool %q: proxied %s: %w", tc.Name, display, err)
+				}
+				if err := reg.Add(e); err != nil {
+					return nil, fmt.Errorf("bridge: tool %q: proxied %s: %w", tc.Name, display, err)
+				}
+			}
+		}
+	}
+	return reg, nil
+}
+
+func (t *ToolConfig) validate() error {
+	if strings.TrimSpace(t.Name) == "" {
+		return fmt.Errorf("bridge: tool without a name")
+	}
+	if (t.Exec == nil) == (t.MCP == nil) {
+		return fmt.Errorf("bridge: tool %q: exactly one of exec or mcp must be set", t.Name)
+	}
+	return nil
+}
+
+// firstLine reduces a (possibly long) description to the summary shown in
+// command listings.
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return strings.TrimSpace(s[:i])
+	}
+	return strings.TrimSpace(s)
+}
