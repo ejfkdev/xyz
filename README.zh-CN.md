@@ -97,13 +97,22 @@ for _, rt := range tools {
 }
 ```
 
+## 多个 CLI，一个服务
+
+配置的 `tools` 列表本身就是把多条命令组合进同一注册表（每个前端背后同一台服务）。两种形态顺势而来：
+
+- **分文件、加载时合并**：`XYZ_CONFIG=ls.json,whoami.json,du.json xyz serve`（或 `bridge.LoadMany`）把多个源合成一台服务；跨源同名工具在启动时报错。
+- **平铺名与可配前缀**：不带点分的工具名落成顶层命令——CLI 是 `xyz ls`，HTTP 是 `POST /tools/ls`，MCP 工具名是 `ls`。配置级 `http_prefix` 换路由前缀：`"http_prefix": "/api"` 得到 `POST /api/ls`。
+
+`examples/multisvc/` 用真实系统命令接好了这两种形态。
+
 ## 输入 schema 子集
 
 动态工具按下述子集校验（draft-07 风味）：`object`（含 `properties`/`required`）与标量 `string`/`integer`/`number`/`boolean`/`array`（含 `items`），外加 `description`、`default`、`enum`（仅标量）。嵌套对象在 MCP 与 HTTP（JSON body）可用，CLI 暂无嵌套 flag 语法、自动跳过。宽松输入按 xyz-go 定义时的口径归一：CLI flag 与 HTTP query 的字符串会转成 schema 类型，`--port 8080` 落到手即整数 `8080`。
 
 ## 配置加载
 
-查找顺序：环境变量 `XYZ_CONFIG`（本地路径**或** `http(s)` URL——每次运行重新拉取），否则当前目录的 `./xyz.json`。网关每次进程解析一次：`xyz <工具> …` 调用完即退；`xyz mcp stdio` / `xyz serve` 把注册表留在进程生命周期内。
+查找顺序：环境变量 `XYZ_CONFIG`（本地路径**或** `http(s)` URL，逗号分隔可合并多个源——每次运行重新拉取），否则当前目录的 `./xyz.json`。网关每次进程解析一次：`xyz <工具> …` 调用完即退；`xyz mcp stdio` / `xyz serve` 把注册表留在进程生命周期内。
 
 ## 名字到三条通道的映射
 

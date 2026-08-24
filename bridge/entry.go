@@ -15,11 +15,28 @@ import (
 // JSON value for MCP proxies.
 type Invoker func(ctx context.Context, args map[string]any) (any, error)
 
-// NewTool is the dynamic entry factory: a JSON Schema subset (input) plus
-// an Invoker becomes a fully wired spec.Entry — the CLI flags, the HTTP
-// route (POST /tools/<dotted path>) and the MCP tool all derive from it,
-// with no compile-time struct.
+// ToolOpts tunes the per-tool channel bindings of a dynamic entry.
+type ToolOpts struct {
+	// HTTPPrefix replaces the default "/tools" route prefix; leading and
+	// trailing slashes are normalized away. The full route becomes
+	// "<method> /<prefix>/<dotted-path>".
+	HTTPPrefix string
+	// CLISkip removes the whole command from the CLI frontend.
+	CLISkip bool
+}
+
+// NewTool is the dynamic entry factory with default channel bindings; see
+// NewToolWith for the tunables.
 func NewTool(name, summary, description string, input any, inv Invoker) (*spec.Entry, error) {
+	return NewToolWith(name, summary, description, input, inv, ToolOpts{})
+}
+
+// NewToolWith is the dynamic entry factory: a JSON Schema subset (input)
+// plus an Invoker becomes a fully wired spec.Entry — the CLI subcommand
+// (dotted segments become levels), the HTTP route and the MCP tool all
+// derive from it, with no compile-time struct. A dotted-free name lands as
+// a top-level command: HTTP POST /<prefix>/ls, CLI <app> ls.
+func NewToolWith(name, summary, description string, input any, inv Invoker, opts ToolOpts) (*spec.Entry, error) {
 	if strings.TrimSpace(name) == "" {
 		return nil, fmt.Errorf("bridge: tool name must not be empty")
 	}
@@ -34,17 +51,20 @@ func NewTool(name, summary, description string, input any, inv Invoker) (*spec.E
 		return nil, fmt.Errorf("bridge: tool %q: input schema must be an object, got %q", name, node.typ)
 	}
 
-	// name 的点分路径映射为 CLI 子命令层级（xyz dns lookup）、MCP 工具名
-	// 与 HTTP 路径（/tools/dns/lookup）三份同源形态。
+	prefix := strings.Trim(opts.HTTPPrefix, "/")
+	if prefix == "" {
+		prefix = "tools"
+	}
 	e := &spec.Entry{
 		Name:        name,
 		Summary:     summary,
 		Description: description,
 		InputSchema: toSpecSchema(node),
 		Root:        toFieldMeta(name, node),
+		CLI:         spec.CliHints{Skip: opts.CLISkip},
 		HTTP: spec.HTTPHints{
 			Method: "POST",
-			Path:   "/tools/" + strings.ReplaceAll(name, ".", "/"),
+			Path:   "/" + prefix + "/" + strings.ReplaceAll(name, ".", "/"),
 		},
 	}
 	e.Invoke = func(ctx context.Context, args map[string]any) (any, error) {
@@ -155,9 +175,13 @@ func nodeSchema(n *schemaNode) *spec.Schema {
 }
 
 // Config is the xyz.json document: a declarative list of tools, each
-// carried by exactly one adapter.
+// carried by exactly one adapter. One config hosts as many tools as needed
+// — they compose into a single registry, one service behind every frontend.
 type Config struct {
-	Tools []ToolConfig `json:"tools"`
+	// HTTPPrefix sets the route prefix for every tool of this config
+	// (default "/tools"); "/api" turns them into /api/<dotted-path>.
+	HTTPPrefix string       `json:"http_prefix,omitempty"`
+	Tools      []ToolConfig `json:"tools"`
 }
 
 // ToolConfig declares one dynamic tool.
@@ -183,12 +207,13 @@ func (c *Config) Build(ctx context.Context) (*registry.Registry, error) {
 		if err := tc.validate(); err != nil {
 			return nil, err
 		}
+		opts := ToolOpts{HTTPPrefix: c.HTTPPrefix}
 		switch {
 		case tc.Exec != nil:
 			if err := tc.Exec.validate(tc.Input); err != nil {
 				return nil, fmt.Errorf("bridge: tool %q: %w", tc.Name, err)
 			}
-			e, err := NewTool(tc.Name, tc.Summary, tc.Description, tc.Input, ExecInvoker(*tc.Exec))
+			e, err := NewToolWith(tc.Name, tc.Summary, tc.Description, tc.Input, ExecInvoker(*tc.Exec), opts)
 			if err != nil {
 				return nil, err
 			}
@@ -206,7 +231,7 @@ func (c *Config) Build(ctx context.Context) (*registry.Registry, error) {
 			}
 			for _, display := range sortedKeys(proxy.tools) {
 				rt := proxy.tools[display]
-				e, err := NewTool(display, firstLine(rt.Description), rt.Description, rt.Input, proxy.InvokeTool(display))
+				e, err := NewToolWith(display, firstLine(rt.Description), rt.Description, rt.Input, proxy.InvokeTool(display), opts)
 				if err != nil {
 					return nil, fmt.Errorf("bridge: tool %q: proxied %s: %w", tc.Name, display, err)
 				}

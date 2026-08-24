@@ -1,0 +1,9 @@
+{
+  "tools": [
+    {
+      "name": "whoami",
+      "summary": "当前用户名",
+      "exec": { "program": "/usr/bin/whoami", "timeout": "10s" }
+    }
+  ]
+}

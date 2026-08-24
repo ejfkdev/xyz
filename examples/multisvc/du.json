@@ -1,0 +1,15 @@
+{
+  "tools": [
+    {
+      "name": "du",
+      "summary": "目录占用空间",
+      "exec": { "program": "/usr/bin/du", "args": ["-sh", "{path}"], "timeout": "30s" },
+      "input": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "目录路径", "default": "." }
+        }
+      }
+    }
+  ]
+}

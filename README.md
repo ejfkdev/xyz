@@ -98,13 +98,22 @@ for _, rt := range tools {
 }
 ```
 
+## Many CLIs, one service
+
+A config's `tools` list already composes multiple commands into the one registry behind every frontend. Two shapes follow from that:
+
+- **Split files, merged at load**: `XYZ_CONFIG=ls.json,whoami.json,du.json xyz serve` (or `bridge.LoadMany`) merges the sources into one service; duplicate tool names across sources fail at startup.
+- **Flat, prefixable routes**: a dotted-free tool name lands as a top-level command — `xyz ls` on the CLI, `POST /tools/ls` over HTTP, `ls` over MCP. `http_prefix` on the config swaps the route prefix: `"http_prefix": "/api"` yields `POST /api/ls`.
+
+`examples/multisvc/` wires both shapes to real system utilities.
+
 ## Input schema subset
 
 Dynamic tools validate with the subset below (draft-07 flavored): `object` (with `properties`/`required`) and the scalars `string`/`integer`/`number`/`boolean`/`array` (with `items`), plus `description`, `default` and `enum` (scalars). Nested objects work over MCP and HTTP (JSON body) and are skipped on the CLI, which has no nested-flag syntax yet. Loose inputs are coerced like xyz-go defines: CLI flags and HTTP query strings convert to the schema type, so `--port 8080` lands as the integer `8080`.
 
 ## Configuration loading
 
-Lookup order: the `XYZ_CONFIG` environment variable (a path **or** an `http(s)` URL — fetched afresh per run), otherwise `./xyz.json` in the current directory. The gateway resolves once per process: `xyz <tool> …` shuts down right after the call; `xyz mcp stdio` / `xyz serve` hold the resolved registry for the process lifetime.
+Lookup order: the `XYZ_CONFIG` environment variable (a path **or** an `http(s)` URL, comma-separated for several sources — fetched afresh per run), otherwise `./xyz.json` in the current directory. The gateway resolves once per process: `xyz <tool> …` shuts down right after the call; `xyz mcp stdio` / `xyz serve` hold the resolved registry for the process lifetime.
 
 ## Naming across the three fronts
 

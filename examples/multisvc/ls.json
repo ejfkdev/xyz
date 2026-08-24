@@ -1,0 +1,15 @@
+{
+  "tools": [
+    {
+      "name": "ls",
+      "summary": "列出目录内容",
+      "exec": { "program": "/bin/ls", "args": ["-la", "{path}"], "timeout": "10s" },
+      "input": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "目录路径", "default": "." }
+        }
+      }
+    }
+  ]
+}

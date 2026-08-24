@@ -17,13 +17,17 @@ import (
 // directory when XYZ_CONFIG is unset.
 const DefaultConfigName = "xyz.json"
 
-// Load reads the config from a local path or an http(s) URL and builds the
-// registry. An empty source falls back to LoadDefault's lookup order. URLs
-// are fetched afresh on every process start — the "resolve once per run"
-// model the gateway documents.
+// Load reads one config source — a local path or an http(s) URL — and
+// builds the registry. A comma-separated list merges several sources into
+// one service (see LoadMany); an empty source falls back to LoadDefault's
+// lookup order. URLs are fetched afresh on every process start — the
+// "resolve once per run" model the gateway documents.
 func Load(ctx context.Context, source string) (*registry.Registry, error) {
 	if source == "" {
 		return LoadDefault(ctx)
+	}
+	if parts := strings.Split(source, ","); len(parts) > 1 {
+		return LoadMany(ctx, parts)
 	}
 	data, err := readSource(source)
 	if err != nil {
@@ -32,8 +36,33 @@ func Load(ctx context.Context, source string) (*registry.Registry, error) {
 	return ParseAndBuild(ctx, data)
 }
 
-// LoadDefault locates the config by convention: XYZ_CONFIG (a path or URL)
-// wins, otherwise ./xyz.json in the current directory.
+// LoadMany merges several sources (files and URLs mixed) into one registry
+// — the "several CLIs, one service" shape: every tool of every config ends
+// up in the same CLI tree, HTTP router and MCP server. Duplicate tool names
+// across sources are errors, surfacing at startup instead of at first call.
+func LoadMany(ctx context.Context, sources []string) (*registry.Registry, error) {
+	reg := registry.New()
+	for _, s := range sources {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		sub, err := Load(ctx, s)
+		if err != nil {
+			return nil, fmt.Errorf("bridge: source %q: %w", s, err)
+		}
+		for _, e := range sub.All() {
+			if err := reg.Add(e); err != nil {
+				return nil, fmt.Errorf("bridge: source %q: %w", s, err)
+			}
+		}
+	}
+	return reg, nil
+}
+
+// LoadDefault locates the config by convention: XYZ_CONFIG (a path or URL,
+// comma-separated for several sources) wins, otherwise ./xyz.json in the
+// current directory.
 func LoadDefault(ctx context.Context) (*registry.Registry, error) {
 	if p := os.Getenv("XYZ_CONFIG"); p != "" {
 		return Load(ctx, p)
