@@ -3,7 +3,7 @@ module github.com/ejfkdev/xyz
 go 1.25.0
 
 require (
-	github.com/ejfkdev/xyz-go v0.3.3
+	github.com/ejfkdev/xyz-go v0.4.2
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 )
 
